@@ -14,8 +14,7 @@ def collect_pr_data(pr_record):
         'base_branch': pr_record.get('base_branch', ''),
         'head_branch': pr_record.get('head_branch', ''),
         'file_changes': [],
-        'commit_messages': [],
-        'commit_patches': []
+        'commits': []  # Store commits with their messages and file changes together
     }
     
     # Collect file changes (patches) from files list
@@ -27,21 +26,24 @@ def collect_pr_data(pr_record):
                     'patch': file_info.get('patch', '')
                 })
     
-    # Collect commit messages and patches from commit_list
+    # Collect commits with their messages and file changes grouped together
     if 'commit_list' in pr_record:
         for commit in pr_record['commit_list']:
-            # Collect commit message
-            if 'message' in commit:
-                collected_data['commit_messages'].append(commit['message'])
+            commit_data = {
+                'message': commit.get('message', ''),
+                'files': []
+            }
             
-            # Collect commit file changes/patches
+            # Collect file changes for this commit
             if 'files' in commit:
                 for file_info in commit['files']:
                     if 'patch' in file_info and file_info['patch']:
-                        collected_data['commit_patches'].append({
+                        commit_data['files'].append({
                             'filename': file_info.get('filename', ''),
                             'patch': file_info.get('patch', '')
                         })
+            
+            collected_data['commits'].append(commit_data)
     
     return collected_data
 
@@ -55,19 +57,29 @@ def create_title_prompt(pr_data):
     prompt += f"Base Branch: {pr_data['base_branch']}\n"
     prompt += f"Head Branch: {pr_data['head_branch']}\n\n"
     
-    # Add commit messages
-    if pr_data['commit_messages']:
-        prompt += "Commit Messages:\n"
-        for i, msg in enumerate(pr_data['commit_messages'][:5], 1):  # Limit to first 5
-            prompt += f"{i}. {msg}\n"
-        prompt += "\n"
+    # Add commit level details
+    if pr_data['commits']:
+        prompt += f"Commits ({len(pr_data['commits'])} commits):\n\n"
+        for i, commit in enumerate(pr_data['commits'], 1):
+            prompt += f"Commit {i}:\n"
+            prompt += f"Message: {commit['message']}\n"
+            
+            # if commit['files']:
+            #     prompt += f"Files Changed ({len(commit['files'])} files):\n"
+            #     for file_change in commit['files']:
+            #         prompt += f"\n  File: {file_change['filename']}\n"
+            #         prompt += f"  Changes:\n"
+            #         # Indent the patch for better readability
+            #         for line in file_change['patch'].split('\n'):
+            #             prompt += f"    {line}\n"
+            prompt += "\n"
     
-    # Add file changes summary
+    # Add PR-level file changes
     if pr_data['file_changes']:
-        prompt += f"Files Changed: {len(pr_data['file_changes'])} files\n"
-        prompt += "Changed Files:\n"
-        for file_change in pr_data['file_changes'][:10]:  # Limit to first 10
-            prompt += f"- {file_change['filename']}\n"
+        prompt += f"PR-Level Files Changed ({len(pr_data['file_changes'])} files):\n"
+        for file_change in pr_data['file_changes']:
+            prompt += f"\nFile: {file_change['filename']}\n"
+            prompt += f"Changes:\n{file_change['patch']}\n"
         prompt += "\n"
     
     prompt += "Based on the above information, generate a concise and descriptive pull request title (one line only):\n"
@@ -85,23 +97,29 @@ def create_description_prompt(pr_data):
     prompt += f"Base Branch: {pr_data['base_branch']}\n"
     prompt += f"Head Branch: {pr_data['head_branch']}\n\n"
     
-    # Add commit messages
-    if pr_data['commit_messages']:
-        prompt += "Commit Messages:\n"
-        for i, msg in enumerate(pr_data['commit_messages'], 1):
-            prompt += f"{i}. {msg}\n"
-        prompt += "\n"
+    # Add commit level details
+    if pr_data['commits']:
+        prompt += f"Commits ({len(pr_data['commits'])} commits):\n\n"
+        for i, commit in enumerate(pr_data['commits'], 1):
+            prompt += f"Commit {i}:\n"
+            prompt += f"Message: {commit['message']}\n"
+            
+            # if commit['files']:
+            #     prompt += f"Files Changed ({len(commit['files'])} files):\n"
+            #     for file_change in commit['files']:
+            #         prompt += f"\n  File: {file_change['filename']}\n"
+            #         prompt += f"  Changes:\n"
+            #         # Indent the patch for better readability
+            #         for line in file_change['patch'].split('\n'):
+            #             prompt += f"    {line}\n"
+            prompt += "\n"
     
-    # Add file changes with limited patches
+    # Add PR-level file changes
     if pr_data['file_changes']:
-        prompt += f"Files Changed ({len(pr_data['file_changes'])} files):\n"
-        for file_change in pr_data['file_changes'][:5]:  # Limit to first 5 files
+        prompt += f"PR-Level Files Changed ({len(pr_data['file_changes'])} files):\n"
+        for file_change in pr_data['file_changes']:
             prompt += f"\nFile: {file_change['filename']}\n"
-            # Limit patch size to avoid token overflow
-            patch = file_change['patch']
-            if len(patch) > 500:
-                patch = patch[:500] + "\n... (truncated)"
-            prompt += f"Changes:\n{patch}\n"
+            prompt += f"Changes:\n{file_change['patch']}\n"
         prompt += "\n"
     
     prompt += "Based on the above information, generate a comprehensive pull request description that explains:\n"
@@ -187,96 +205,128 @@ def main():
     
     print(f"Processing {len(pr_records)} out of {total_records} records", flush=True)
     
-    # Output files
-    title_output_file = os.path.join(args.output_dir, "generated_titles.txt")
-    description_output_file = os.path.join(args.output_dir, "generated_descriptions.txt")
-    reference_title_file = os.path.join(args.output_dir, "reference_titles.txt")
-    reference_description_file = os.path.join(args.output_dir, "reference_descriptions.txt")
-    metadata_file = os.path.join(args.output_dir, "metadata.jsonl")
+    # Output files - JSON format
+    generated_output_file = os.path.join(args.output_dir, "generated_outputs.json")
+    reference_output_file = os.path.join(args.output_dir, "reference_outputs.json")
+    prompts_output_file = os.path.join(args.output_dir, "prompts.json")
     
-    # Open files for writing
-    with open(title_output_file, 'w', encoding='utf-8') as f_title, \
-         open(description_output_file, 'w', encoding='utf-8') as f_desc, \
-         open(reference_title_file, 'w', encoding='utf-8') as f_ref_title, \
-         open(reference_description_file, 'w', encoding='utf-8') as f_ref_desc, \
-         open(metadata_file, 'w', encoding='utf-8') as f_meta:
+    # Lists to store all outputs
+    generated_outputs = []
+    reference_outputs = []
+    prompts_data = []
+    
+    for idx, pr_record in enumerate(pr_records):
+        print(f"\n{'='*80}")
+        print(f"Processing PR {idx + 1}/{len(pr_records)}")
+        print(f"Repository: {pr_record.get('repository', 'N/A')}")
+        print(f"PR Number: {pr_record.get('number', 'N/A')}")
+        print(f"{'='*80}")
         
-        for idx, pr_record in enumerate(pr_records):
-            print(f"\n{'='*80}")
-            print(f"Processing PR {idx + 1}/{len(pr_records)}")
-            print(f"Repository: {pr_record.get('repository', 'N/A')}")
-            print(f"PR Number: {pr_record.get('number', 'N/A')}")
-            print(f"{'='*80}")
+        try:
+            # Collect PR data
+            pr_data = collect_pr_data(pr_record)
             
-            try:
-                # Collect PR data
-                pr_data = collect_pr_data(pr_record)
-                
-                # Generate PR title
-                print("Generating PR title...", flush=True)
-                title_prompt = create_title_prompt(pr_data)
-                generated_title = generate_with_llm(model, tokenizer, title_prompt, 
-                                                   max_new_tokens=50, temperature=0.3)
-                # Clean up the title (take only the first line)
-                generated_title = generated_title.split('\n')[0].strip()
-                print(f"Generated Title: {generated_title}")
-                
-                # Generate PR description
-                print("Generating PR description...", flush=True)
-                description_prompt = create_description_prompt(pr_data)
-                generated_description = generate_with_llm(model, tokenizer, description_prompt,
-                                                         max_new_tokens=300, temperature=0.3)
-                print(f"Generated Description: {generated_description[:200]}...")
-                
-                # Get reference title and description
-                reference_title = pr_record.get('title', '')
-                reference_description = pr_record.get('body', '')
-                
-                # Write generated outputs
-                f_title.write(generated_title + '\n')
-                f_desc.write(generated_description + '\n')
-                
-                # Write reference outputs
-                f_ref_title.write(reference_title + '\n')
-                f_ref_desc.write(reference_description + '\n')
-                
-                # Write metadata
-                metadata = {
-                    'index': idx,
-                    'repository': pr_record.get('repository', ''),
-                    'pr_number': pr_record.get('number', ''),
-                    'generated_title': generated_title,
-                    'reference_title': reference_title,
-                    'generated_description_length': len(generated_description),
-                    'reference_description_length': len(reference_description)
-                }
-                f_meta.write(json.dumps(metadata) + '\n')
-                
-                print(f"✓ Successfully processed PR {idx + 1}")
-                
-            except Exception as e:
-                print(f"✗ Error processing PR {idx + 1}: {str(e)}")
-                # Write empty lines to maintain alignment
-                f_title.write('\n')
-                f_desc.write('\n')
-                f_ref_title.write((pr_record.get('title', '') if pr_record.get('title') else '') + '\n')
-                f_ref_desc.write((pr_record.get('body', '') if pr_record.get('body') else '') + '\n')
-                f_meta.write(json.dumps({
-                    'index': idx,
-                    'repository': pr_record.get('repository', ''),
-                    'pr_number': pr_record.get('number', ''),
-                    'error': str(e)
-                }) + '\n')
-                continue
+            # Generate PR title
+            print("Generating PR title...", flush=True)
+            title_prompt = create_title_prompt(pr_data)
+            generated_title = generate_with_llm(model, tokenizer, title_prompt, 
+                                               max_new_tokens=50, temperature=0.3)
+            # Clean up the title (take only the first line)
+            generated_title = generated_title.split('\n')[0].strip()
+            print(f"Generated Title: {generated_title}")
+            
+            # Generate PR description
+            print("Generating PR description...", flush=True)
+            description_prompt = create_description_prompt(pr_data)
+            generated_description = generate_with_llm(model, tokenizer, description_prompt,
+                                                     max_new_tokens=300, temperature=0.3)
+            print(f"Generated Description: {generated_description[:200]}...")
+            
+            # Get reference title and description
+            reference_title = pr_record.get('title', '')
+            reference_description = pr_record.get('body', '')
+            
+            # Store generated outputs
+            generated_outputs.append({
+                'index': idx,
+                'repository': pr_record.get('repository', ''),
+                'pr_number': pr_record.get('number', ''),
+                'base_branch': pr_record.get('base_branch', ''),
+                'head_branch': pr_record.get('head_branch', ''),
+                'generated_title': generated_title,
+                'generated_description': generated_description
+            })
+            
+            # Store reference outputs
+            reference_outputs.append({
+                'index': idx,
+                'repository': pr_record.get('repository', ''),
+                'pr_number': pr_record.get('number', ''),
+                'base_branch': pr_record.get('base_branch', ''),
+                'head_branch': pr_record.get('head_branch', ''),
+                'reference_title': reference_title,
+                'reference_description': reference_description
+            })
+            
+            # Store prompts
+            prompts_data.append({
+                'index': idx,
+                'repository': pr_record.get('repository', ''),
+                'pr_number': pr_record.get('number', ''),
+                'title_prompt': title_prompt,
+                'description_prompt': description_prompt
+            })
+            
+            print(f"✓ Successfully processed PR {idx + 1}")
+            
+        except Exception as e:
+            print(f"✗ Error processing PR {idx + 1}: {str(e)}")
+            # Store error information
+            generated_outputs.append({
+                'index': idx,
+                'repository': pr_record.get('repository', ''),
+                'pr_number': pr_record.get('number', ''),
+                'error': str(e),
+                'generated_title': '',
+                'generated_description': ''
+            })
+            
+            reference_outputs.append({
+                'index': idx,
+                'repository': pr_record.get('repository', ''),
+                'pr_number': pr_record.get('number', ''),
+                'reference_title': pr_record.get('title', ''),
+                'reference_description': pr_record.get('body', '')
+            })
+            
+            prompts_data.append({
+                'index': idx,
+                'repository': pr_record.get('repository', ''),
+                'pr_number': pr_record.get('number', ''),
+                'error': str(e),
+                'title_prompt': '',
+                'description_prompt': ''
+            })
+            continue
+    
+    # Save all outputs to JSON files
+    print(f"\nSaving outputs to JSON files...", flush=True)
+    
+    with open(generated_output_file, 'w', encoding='utf-8') as f:
+        json.dump(generated_outputs, f, indent=2, ensure_ascii=False)
+    
+    with open(reference_output_file, 'w', encoding='utf-8') as f:
+        json.dump(reference_outputs, f, indent=2, ensure_ascii=False)
+    
+    with open(prompts_output_file, 'w', encoding='utf-8') as f:
+        json.dump(prompts_data, f, indent=2, ensure_ascii=False)
     
     print(f"\n{'='*80}")
     print("Processing complete!")
     print(f"{'='*80}")
-    print(f"Generated titles saved to: {title_output_file}")
-    print(f"Generated descriptions saved to: {description_output_file}")
-    print(f"Reference titles saved to: {reference_title_file}")
-    print(f"Reference descriptions saved to: {reference_description_file}")
-    print(f"Metadata saved to: {metadata_file}")
+    print(f"Generated outputs saved to: {generated_output_file}")
+    print(f"Reference outputs saved to: {reference_output_file}")
+    print(f"Prompts saved to: {prompts_output_file}")
     print(f"{'='*80}\n")
 
 
