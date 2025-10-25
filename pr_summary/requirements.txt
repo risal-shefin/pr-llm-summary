@@ -1,0 +1,4 @@
+nltk==3.9.2
+numpy==2.2.6
+unsloth==2025.10.9
+unsloth_zoo==2025.10.10
