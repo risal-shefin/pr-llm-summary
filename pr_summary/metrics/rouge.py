@@ -9,6 +9,7 @@ from typing import List, Dict
 import re
 from collections import Counter
 import json
+from tqdm import tqdm
 
 
 def load_text_file(filepath: str) -> List[str]:
@@ -148,8 +149,8 @@ def compute_rouge_scores(references: List[str], hypotheses: List[str]) -> Dict[s
     rouge_1_scores = {'precision': [], 'recall': [], 'f1': []}
     rouge_2_scores = {'precision': [], 'recall': [], 'f1': []}
     rouge_l_scores = {'precision': [], 'recall': [], 'f1': []}
-    
-    for ref, hyp in zip(references, hypotheses):
+
+    for ref, hyp in tqdm(zip(references, hypotheses), total=len(references), desc="Computing ROUGE scores"):
         # ROUGE-1
         r1 = rouge_n(ref, hyp, 1)
         rouge_1_scores['precision'].append(r1['precision'])

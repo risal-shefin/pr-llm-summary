@@ -11,6 +11,7 @@ from nltk.translate.bleu_score import sentence_bleu, corpus_bleu, SmoothingFunct
 from nltk.tokenize import word_tokenize
 import numpy as np
 import json
+from tqdm import tqdm
 
 
 def ensure_nltk_data():
@@ -70,8 +71,8 @@ def compute_bleu_scores(references: List[str], hypotheses: List[str]) -> Dict[st
     bleu_2_scores = []
     bleu_3_scores = []
     bleu_4_scores = []
-    
-    for ref, hyp in zip(tokenized_refs, tokenized_hyps):
+
+    for ref, hyp in tqdm(zip(tokenized_refs, tokenized_hyps), total=len(tokenized_refs), desc="Computing BLEU scores"):
         # BLEU-1
         bleu_1 = sentence_bleu(ref, hyp, weights=(1, 0, 0, 0), 
                                smoothing_function=smoothing.method1)
