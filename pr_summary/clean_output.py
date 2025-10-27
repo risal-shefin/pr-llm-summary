@@ -23,6 +23,8 @@ def remove_checklist_paragraphs(text: str) -> str:
     """Remove paragraphs starting with 'checklist' headline."""
     # Remove sections that start with ## Checklist or ### Checklist (case insensitive)
     text = re.sub(r'#+\s*checklist[:\s]*.*?(?=\n##|\n###|$)', '', text, flags=re.IGNORECASE | re.DOTALL)
+    # Also remove lines that start with "checklist:" or similar
+    text = re.sub(r'(?i)^checklist:.*?(?=\n\n|\Z)', '', text, flags=re.MULTILINE | re.DOTALL)
     return text
 
 
@@ -53,7 +55,7 @@ def should_filter_sentence(sentence: str) -> bool:
         return True
     
     # Check for markdown headlines
-    if re.search(r'^#+\s+', sentence.strip()):
+    if re.search(r'^#{1,6}\s+', sentence.strip()):
         return True
     
     return False
@@ -76,7 +78,7 @@ def preprocess_tokens(tokens: List[str]) -> List[str]:
         elif re.match(r'v?\d+\.\d+(\.\d+)*', token):
             processed_tokens.append('version')
         # Check for numbers
-        elif re.match(r'^\d+$', token):
+        elif re.match(r'^\d+\.?\d*$', token):
             processed_tokens.append('0')
         else:
             processed_tokens.append(token)
@@ -128,21 +130,65 @@ def preprocess_text(text: str) -> str:
     return ' '.join(processed_sentences)
 
 
-def clean_pr_entry(pr_entry: Dict) -> Dict:
-    """Clean a single PR entry by preprocessing title and description."""
+def clean_json_artifacts(text: str) -> str:
+    """
+    Remove only artifacts from LLM output to JSON conversion.
+    This includes: \r, \n, extra whitespace, etc.
+    Does NOT apply semantic preprocessing.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+    
+    # Remove \r characters
+    text = text.replace('\r', '')
+    
+    # Replace multiple newlines with a single space
+    text = re.sub(r'\n+', ' ', text)
+    
+    # Replace multiple spaces with a single space
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Strip leading/trailing whitespace
+    text = text.strip()
+    
+    return text
+
+
+def clean_pr_entry(pr_entry: Dict, apply_full_preprocessing: bool = True) -> Dict:
+    """
+    Clean a single PR entry.
+    
+    Args:
+        pr_entry: The PR entry to clean
+        apply_full_preprocessing: If True, apply full preprocessing (for reference).
+                                  If False, only remove JSON artifacts (for generated).
+    """
     cleaned_entry = pr_entry.copy()
     
-    # Preprocess title fields
-    if 'reference_title' in cleaned_entry:
-        cleaned_entry['reference_title'] = preprocess_text(cleaned_entry['reference_title'])
-    if 'generated_title' in cleaned_entry:
-        cleaned_entry['generated_title'] = preprocess_text(cleaned_entry['generated_title'])
-    
-    # Preprocess description fields
-    if 'reference_description' in cleaned_entry:
-        cleaned_entry['reference_description'] = preprocess_text(cleaned_entry['reference_description'])
-    if 'generated_description' in cleaned_entry:
-        cleaned_entry['generated_description'] = preprocess_text(cleaned_entry['generated_description'])
+    if apply_full_preprocessing:
+        # Full preprocessing for reference outputs
+        # Preprocess title fields
+        if 'reference_title' in cleaned_entry:
+            cleaned_entry['reference_title'] = preprocess_text(cleaned_entry['reference_title'])
+        if 'generated_title' in cleaned_entry:
+            cleaned_entry['generated_title'] = preprocess_text(cleaned_entry['generated_title'])
+        
+        # Preprocess description fields
+        if 'reference_description' in cleaned_entry:
+            cleaned_entry['reference_description'] = preprocess_text(cleaned_entry['reference_description'])
+        if 'generated_description' in cleaned_entry:
+            cleaned_entry['generated_description'] = preprocess_text(cleaned_entry['generated_description'])
+    else:
+        # Minimal cleaning for generated outputs - only remove JSON conversion artifacts
+        if 'reference_title' in cleaned_entry:
+            cleaned_entry['reference_title'] = clean_json_artifacts(cleaned_entry['reference_title'])
+        if 'generated_title' in cleaned_entry:
+            cleaned_entry['generated_title'] = clean_json_artifacts(cleaned_entry['generated_title'])
+        
+        if 'reference_description' in cleaned_entry:
+            cleaned_entry['reference_description'] = clean_json_artifacts(cleaned_entry['reference_description'])
+        if 'generated_description' in cleaned_entry:
+            cleaned_entry['generated_description'] = clean_json_artifacts(cleaned_entry['generated_description'])
     
     return cleaned_entry
 
@@ -206,12 +252,14 @@ def process_json_files(output_dir: Path, clean_output_dir: Path) -> Dict:
     cleaned_generated = []
     
     for ref_entry, gen_entry in zip(reference_data, generated_data):
-        # Clean both entries
-        cleaned_ref = clean_pr_entry(ref_entry)
-        cleaned_gen = clean_pr_entry(gen_entry)
+        # Clean reference entry with full preprocessing
+        cleaned_ref = clean_pr_entry(ref_entry, apply_full_preprocessing=True)
         
-        # Check if either entry is valid (has non-empty content)
-        if is_valid_pr_entry(cleaned_ref) or is_valid_pr_entry(cleaned_gen):
+        # Clean generated entry with minimal preprocessing (only JSON artifacts)
+        cleaned_gen = clean_pr_entry(gen_entry, apply_full_preprocessing=False)
+        
+        # Check if the reference entry is valid (has non-empty content)
+        if is_valid_pr_entry(cleaned_ref):
             cleaned_reference.append(cleaned_ref)
             cleaned_generated.append(cleaned_gen)
         else:

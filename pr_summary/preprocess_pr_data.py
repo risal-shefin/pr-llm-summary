@@ -178,7 +178,7 @@ def collect_and_preprocess_pr_data(pr_record):
         'commit_messages': [],
         'file_changes': [],
         'is_non_ascii': False,
-        'filtered': False
+        'has_missing_critical_data': False
     }
     
     # Preprocess PR title
@@ -234,9 +234,9 @@ def collect_and_preprocess_pr_data(pr_record):
     is_non_ascii = title_non_ascii or body_non_ascii
     processed_data['is_non_ascii'] = is_non_ascii
     
-    # Mark as filtered if critical fields are empty after preprocessing
-    if not processed_title and not processed_body and not processed_data['commit_messages']:
-        processed_data['filtered'] = True
+    # Mark as having missing critical data if critical fields are empty after preprocessing
+    if not processed_title or not processed_body or not processed_data['commit_messages']:
+        processed_data['has_missing_critical_data'] = True
     
     return processed_data
 
@@ -257,8 +257,8 @@ def main():
                         help="Prefix for output files")
     parser.add_argument("--exclude_non_ascii", action='store_true',
                         help="Exclude PRs marked as non-ASCII from output")
-    parser.add_argument("--exclude_filtered", action='store_true',
-                        help="Exclude PRs with empty critical fields after preprocessing")
+    parser.add_argument("--exclude_missing_critical", action='store_true',
+                        help="Exclude PRs with missing critical fields after preprocessing")
     
     args = parser.parse_args()
     
@@ -282,7 +282,7 @@ def main():
     stats = {
         'total': len(pr_records),
         'non_ascii': 0,
-        'filtered': 0,
+        'missing_critical_data': 0,
         'processed': 0
     }
     
@@ -296,13 +296,13 @@ def main():
             # Update statistics
             if processed_pr['is_non_ascii']:
                 stats['non_ascii'] += 1
-            if processed_pr['filtered']:
-                stats['filtered'] += 1
+            if processed_pr['has_missing_critical_data']:
+                stats['missing_critical_data'] += 1
             
             # Check exclusion criteria
             if args.exclude_non_ascii and processed_pr['is_non_ascii']:
                 continue
-            if args.exclude_filtered and processed_pr['filtered']:
+            if args.exclude_missing_critical and processed_pr['has_missing_critical_data']:
                 continue
             
             processed_records.append(processed_pr)
@@ -334,7 +334,7 @@ def main():
     print(f"{'='*80}")
     print(f"Total records: {stats['total']}")
     print(f"Non-ASCII marked: {stats['non_ascii']} ({stats['non_ascii']/stats['total']*100:.2f}%)")
-    print(f"Filtered (empty): {stats['filtered']} ({stats['filtered']/stats['total']*100:.2f}%)")
+    print(f"Missing critical data: {stats['missing_critical_data']} ({stats['missing_critical_data']/stats['total']*100:.2f}%)")
     print(f"Records saved: {stats['processed']}")
     print(f"{'='*80}")
     print(f"Output files:")
