@@ -2,6 +2,7 @@ import argparse
 import os
 import json
 import re
+import random
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 
@@ -208,6 +209,7 @@ def collect_and_preprocess_pr_data(pr_record):
                 'additions': file_info.get('additions', 0),
                 'deletions': file_info.get('deletions', 0),
                 'changes': file_info.get('changes', 0),
+                'patch': file_info.get('patch', '')
             }
             
             # Preprocess patch/diff if available
@@ -241,36 +243,28 @@ def collect_and_preprocess_pr_data(pr_record):
     return processed_data
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Preprocess PR data by filtering trivial and templated information"
-    )
+def process_and_save_datasets(data_file, output_dir, output_prefix, 
+                              exclude_non_ascii, exclude_missing_critical, random_seed):
+    """
+    Process PR data and save the filtered dataset along with train/test splits.
     
-    # Required parameters
-    parser.add_argument("--data_file", type=str, required=True,
-                        help="Path to the input JSONL file containing PR data")
-    parser.add_argument("--output_dir", type=str, required=True,
-                        help="Directory to save preprocessed data")
-    
-    # Optional parameters
-    parser.add_argument("--output_prefix", type=str, default="pr_dataset_preprocessed",
-                        help="Prefix for output files")
-    parser.add_argument("--exclude_non_ascii", action='store_true',
-                        help="Exclude PRs marked as non-ASCII from output")
-    parser.add_argument("--exclude_missing_critical", action='store_true',
-                        help="Exclude PRs with missing critical fields after preprocessing")
-    
-    args = parser.parse_args()
-    
+    Args:
+        data_file: Path to the input JSONL file containing PR data
+        output_dir: Directory to save preprocessed data
+        output_prefix: Prefix for output files
+        exclude_non_ascii: Whether to exclude PRs marked as non-ASCII
+        exclude_missing_critical: Whether to exclude PRs with missing critical fields
+        random_seed: Random seed for train/test split
+    """
     # Create output directory if it doesn't exist
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     
     # Read PR data from JSONL file
-    print(f"Reading data from: {args.data_file}")
+    print(f"Reading data from: {data_file}")
     print(f"{'='*80}")
     
     pr_records = []
-    with open(args.data_file, 'r', encoding='utf-8') as f:
+    with open(data_file, 'r', encoding='utf-8') as f:
         for line in f:
             if line.strip():
                 pr_records.append(json.loads(line))
@@ -300,9 +294,9 @@ def main():
                 stats['missing_critical_data'] += 1
             
             # Check exclusion criteria
-            if args.exclude_non_ascii and processed_pr['is_non_ascii']:
+            if exclude_non_ascii and processed_pr['is_non_ascii']:
                 continue
-            if args.exclude_missing_critical and processed_pr['has_missing_critical_data']:
+            if exclude_missing_critical and processed_pr['has_missing_critical_data']:
                 continue
             
             processed_records.append(processed_pr)
@@ -313,19 +307,60 @@ def main():
             continue
     
     # Save preprocessed data
-    output_json = os.path.join(args.output_dir, f"{args.output_prefix}.json")
-    output_jsonl = os.path.join(args.output_dir, f"{args.output_prefix}.jsonl")
+    output_json = os.path.join(output_dir, f"{output_prefix}.json")
+    output_jsonl = os.path.join(output_dir, f"{output_prefix}.jsonl")
     
     print(f"\n{'='*80}")
     print("Saving preprocessed data...")
     
-    # Save as JSON
+    # Save as JSON (full filtered dataset)
     with open(output_json, 'w', encoding='utf-8') as f:
         json.dump(processed_records, f, indent=2, ensure_ascii=False)
     
-    # Save as JSONL
+    # Save as JSONL (full filtered dataset)
     with open(output_jsonl, 'w', encoding='utf-8') as f:
         for record in processed_records:
+            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    
+    # Perform 80:20 train/test split
+    print(f"Performing 80:20 train/test split with random seed {random_seed}...")
+    random.seed(random_seed)
+    
+    # Shuffle the records
+    shuffled_records = processed_records.copy()
+    random.shuffle(shuffled_records)
+    
+    # Calculate split index
+    split_idx = int(len(shuffled_records) * 0.8)
+    train_records = shuffled_records[:split_idx]
+    test_records = shuffled_records[split_idx:]
+    
+    # Create train and test directories
+    trainset_dir = os.path.join(output_dir, "trainset")
+    testset_dir = os.path.join(output_dir, "testset")
+    os.makedirs(trainset_dir, exist_ok=True)
+    os.makedirs(testset_dir, exist_ok=True)
+    
+    # Save train set
+    train_json = os.path.join(trainset_dir, f"{output_prefix}.json")
+    train_jsonl = os.path.join(trainset_dir, f"{output_prefix}.jsonl")
+    
+    with open(train_json, 'w', encoding='utf-8') as f:
+        json.dump(train_records, f, indent=2, ensure_ascii=False)
+    
+    with open(train_jsonl, 'w', encoding='utf-8') as f:
+        for record in train_records:
+            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    
+    # Save test set
+    test_json = os.path.join(testset_dir, f"{output_prefix}.json")
+    test_jsonl = os.path.join(testset_dir, f"{output_prefix}.jsonl")
+    
+    with open(test_json, 'w', encoding='utf-8') as f:
+        json.dump(test_records, f, indent=2, ensure_ascii=False)
+    
+    with open(test_jsonl, 'w', encoding='utf-8') as f:
+        for record in test_records:
             f.write(json.dumps(record, ensure_ascii=False) + '\n')
     
     # Print statistics
@@ -337,10 +372,53 @@ def main():
     print(f"Missing critical data: {stats['missing_critical_data']} ({stats['missing_critical_data']/stats['total']*100:.2f}%)")
     print(f"Records saved: {stats['processed']}")
     print(f"{'='*80}")
-    print(f"Output files:")
+    print(f"Full filtered dataset:")
     print(f"  JSON: {output_json}")
     print(f"  JSONL: {output_jsonl}")
+    print(f"{'='*80}")
+    print(f"Train set ({len(train_records)} records, 80%):")
+    print(f"  JSON: {train_json}")
+    print(f"  JSONL: {train_jsonl}")
+    print(f"{'='*80}")
+    print(f"Test set ({len(test_records)} records, 20%):")
+    print(f"  JSON: {test_json}")
+    print(f"  JSONL: {test_jsonl}")
     print(f"{'='*80}\n")
+
+
+def main():
+    """Parse command-line arguments and run preprocessing."""
+    parser = argparse.ArgumentParser(
+        description="Preprocess PR data by filtering trivial and templated information"
+    )
+    
+    # Required parameters
+    parser.add_argument("--data_file", type=str, required=True,
+                        help="Path to the input JSONL file containing PR data")
+    parser.add_argument("--output_dir", type=str, required=True,
+                        help="Directory to save preprocessed data")
+    
+    # Optional parameters
+    parser.add_argument("--output_prefix", type=str, default="pr_dataset_preprocessed",
+                        help="Prefix for output files")
+    parser.add_argument("--exclude_non_ascii", action='store_true',
+                        help="Exclude PRs marked as non-ASCII from output")
+    parser.add_argument("--exclude_missing_critical", action='store_true',
+                        help="Exclude PRs with missing critical fields after preprocessing")
+    parser.add_argument("--random_seed", type=int, default=42,
+                        help="Random seed for train/test split (default: 42)")
+    
+    args = parser.parse_args()
+    
+    # Call the processing function
+    process_and_save_datasets(
+        data_file=args.data_file,
+        output_dir=args.output_dir,
+        output_prefix=args.output_prefix,
+        exclude_non_ascii=args.exclude_non_ascii,
+        exclude_missing_critical=args.exclude_missing_critical,
+        random_seed=args.random_seed
+    )
 
 
 if __name__ == "__main__":
