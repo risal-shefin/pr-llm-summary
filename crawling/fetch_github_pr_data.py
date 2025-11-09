@@ -215,7 +215,7 @@ class GitHubPRDataCollector:
         query = """
         query($owner: String!, $repo: String!, $count: Int!, $cursor: String) {
           repository(owner: $owner, name: $repo) {
-            pullRequests(first: $count, after: $cursor, orderBy: {field: CREATED_AT, direction: DESC}) {
+            pullRequests(first: $count, after: $cursor, states: MERGED, orderBy: {field: CREATED_AT, direction: DESC}) {
               pageInfo {
                 hasNextPage
                 endCursor
@@ -341,58 +341,6 @@ class GitHubPRDataCollector:
         except requests.exceptions.RequestException as e:
             print(f"Error fetching PR #{pr_number} file patches: {e}")
             return []
-    
-    def get_pull_requests(self, owner: str, repo: str, 
-                         state: str = 'all', 
-                         max_prs: int = 100) -> List[Dict[str, Any]]:
-        """
-        Fetch pull requests for a specific repository.
-        
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            state: PR state filter ('open', 'closed', 'all')
-            max_prs: Maximum number of PRs to fetch
-            
-        Returns:
-            List of PR data dictionaries
-        """
-        prs = []
-        page = 1
-        per_page = 100
-        
-        while len(prs) < max_prs:
-            self.wait_for_rate_limit()
-            
-            url = f"{self.base_url}/repos/{owner}/{repo}/pulls"
-            params = {
-                'state': state,
-                'per_page': per_page,
-                'page': page,
-                'sort': 'created',
-                'direction': 'desc'
-            }
-            
-            try:
-                response = self.session.get(url, params=params)
-                response.raise_for_status()
-                data = response.json()
-                
-                if not data:
-                    break
-                
-                prs.extend(data)
-                
-                if len(data) < per_page:
-                    break
-                
-                page += 1
-                
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching PRs for {owner}/{repo}: {e}")
-                break
-        
-        return prs[:max_prs]
     
     def get_pr_details(self, owner: str, repo: str, pr_number: int) -> Dict[str, Any]:
         """
