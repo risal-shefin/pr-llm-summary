@@ -177,3 +177,6 @@ pyrightconfig.json
 
 slurm_logs/
 unsloth_compiled_cache/
+models/
+outputs/
+datasets/
