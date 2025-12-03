@@ -324,7 +324,7 @@ def create_training_arguments(args):
         # Save checkpoints and keep best model
         save_strategy="steps",
         save_steps=args.save_steps,
-        save_total_limit=5,  # Keep n most recent checkpoints
+        save_total_limit=5,  # Keep n best checkpoints
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,

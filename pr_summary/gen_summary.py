@@ -244,7 +244,7 @@ def main():
             
             # Get reference title and description
             reference_title = pr_record.get('title', '')
-            reference_description = pr_record.get('body', '')
+            reference_description = pr_record.get('description', '')
             
             # Store generated outputs
             generated_outputs.append({
