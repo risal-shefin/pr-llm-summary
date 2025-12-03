@@ -1,4 +1,4 @@
-# PR Title & Description Generation using LLM
+# Pull Request (PR) Title & Description Generation using LLM
 ## Environment Setup
 ```sh
 $ conda create -n pr-llm python=3.10
@@ -11,6 +11,8 @@ To collect up to 1000 most recent merged PRs from the tp 100 starred projects:
 $ cd crawling
 $ python fetch_github_pr_data.py --repos 100 --prs-per-repo 1000 --output-dir github_pr_dataset_v3
 ```
+Our curated dataset: https://drive.google.com/file/d/1JPYccvLV3C_Jl5OUNawZRcZI6maYS0S1/view?usp=sharing 
+
 ## PR Data Preprocessing
 The following command performs preprocessing using the techniques implemented in preprocess_pr_data.py, excluding entries with non-ASCII characters and entries with empty PR titles or descriptions:
 ```sh
