@@ -11,7 +11,7 @@ To collect up to 1000 most recent merged PRs from the tp 100 starred projects:
 $ cd crawling
 $ python fetch_github_pr_data.py --repos 100 --prs-per-repo 1000 --output-dir github_pr_dataset_v3
 ```
-Our curated dataset: https://drive.google.com/file/d/1JPYccvLV3C_Jl5OUNawZRcZI6maYS0S1/view?usp=sharing 
+You can use your GitHub Personal Access Token by passing it to the `--token` argument to get a higher rate limit.
 
 ## PR Data Preprocessing
 The following command performs preprocessing using the techniques implemented in preprocess_pr_data.py, excluding entries with non-ASCII characters and entries with empty PR titles or descriptions:
@@ -19,6 +19,7 @@ The following command performs preprocessing using the techniques implemented in
 $ cd pr_summary
 $ python preprocess_pr_data.py --data_file <jsonl-dataset-filepath> --output_dir <output-folder-path> --exclude_non_ascii --exclude_missing_critical
 ```
+Our curated dataset: https://drive.google.com/file/d/1JPYccvLV3C_Jl5OUNawZRcZI6maYS0S1/view?usp=sharing 
 
 ## PR Summary Generation via LLM:
 Example command:
